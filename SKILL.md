@@ -9,8 +9,8 @@ Use this skill when the user wants to clean up branch and PR sprawl without merg
 
 The job is:
 
-1. inspect every relevant PR and branch
-2. compare each one against the current codebase
+1. fully reconcile branch, PR, worktree, and duplicate-work state first
+2. compare each relevant branch against the current codebase
 3. manually implement the useful parts on the current mainline
 4. close obsolete PRs
 5. delete stale branches only after the useful work is preserved or confirmed obsolete
@@ -19,6 +19,7 @@ This skill is instructions only. Do not build helper tooling unless the user exp
 
 ## Hard Rules
 
+- Reconciliation comes before implementation. No code edits before the reconciliation pass is complete.
 - Never merge old branches directly.
 - Never cherry-pick old commits as the integration method.
 - Never assume a PR is useful because the title sounds useful.
@@ -29,23 +30,47 @@ This skill is instructions only. Do not build helper tooling unless the user exp
 - Close PRs only after you understand whether anything in them still matters.
 - Delete branches only after the useful work is preserved or clearly obsolete.
 - Do not delete the user's current branch or any branch with clearly active ongoing work unless the user asked for aggressive cleanup and the branch is proven redundant.
+- `git diff --stat` alone does not count as reconciliation.
+- UI fixes, app edits, or build runs before branch and worktree reconciliation mean the procedure is mis-sequenced.
+
+## Required First Pass
+
+Before touching application code, complete and record all of this:
+
+1. branch inventory
+2. worktree inventory
+3. local uncommitted work inventory
+4. branch graph and recent commit inventory
+5. open PR inventory
+6. branch-to-main diff review for all relevant branches
+7. duplicate and overlap detection
+8. explicit keep, port, close, delete, or defer decision per branch or PR
+
+Do not start implementation until this pass is complete.
 
 ## Workflow
 
-### 1. Inspect Current Repo State
+### 1. Reconcile Repo State First
 
 - Work in the real local repo.
 - Read the repo context first:
   - `tree -I node_modules -L 2`
-  - `git status --short`
-  - `git branch --all`
+  - `git status --short --branch`
+  - `git worktree list`
+  - `git branch --all --verbose --no-abbrev`
   - `git remote -v`
-  - `git log --oneline --decorate -20`
+  - `git log --oneline --decorate --graph -30 --all`
 - Fetch the latest remote state:
   - `git fetch --all --prune`
 - List the open PRs and their head branches:
   - `gh pr list --state open`
 - If useful, also inspect closed PRs that still have unmerged branches or suspicious overlap.
+- Record local-only branches, remote-only branches, and detached or abandoned worktrees.
+- Detect overlap, not just existence:
+  - compare changed file sets
+  - compare commit ancestry
+  - compare branch diff themes
+- If two branches touch the same workflow, explicitly decide whether one supersedes the other.
 
 ### 2. Build The Reconciliation Ledger
 
@@ -55,11 +80,16 @@ For each open PR or suspicious branch, record:
 - whether the branch still exists on remote and locally
 - changed files
 - whether the same area has already been modified on current `main`
+- whether the branch overlaps another branch or PR
+- whether there is uncommitted local work in the same area
 - first impression:
   - `candidate`
   - `duplicate`
   - `obsolete`
   - `needs-manual-port`
+  - `active-do-not-delete`
+
+This ledger is mandatory. No app edits before it exists.
 
 ### 3. Review Every PR And Branch Properly
 
@@ -81,6 +111,13 @@ For remote branches without an open PR:
 - inspect the branch tip and diff against `origin/main`
 - review commits and changed files
 - apply the same classification
+
+For local branches and worktrees:
+
+- inspect unpushed commits
+- inspect uncommitted changes
+- decide whether they contain unique work, duplicate work, or stale work
+- never assume a branch is disposable just because it has no PR
 
 ### 4. Manually Port Only The Useful Parts
 
@@ -127,11 +164,12 @@ After PR decisions are complete:
 
 Preferred order:
 
-1. port useful changes manually
-2. verify
-3. close PR
-4. delete remote branch if appropriate
-5. delete local branch if appropriate
+1. reconcile all branches, worktrees, PRs, and overlaps
+2. port useful changes manually
+3. verify
+4. close PR
+5. delete remote branch if appropriate
+6. delete local branch if appropriate
 
 ### 8. Finish Cleanly
 
@@ -153,3 +191,5 @@ Discard it if any of these are true:
 - the branch is mostly noise with no clear surviving value
 
 If you are unsure, inspect deeper before deleting. Cleanup is only successful when worthwhile work is preserved and dead branch clutter is removed.
+
+If the first logged actions in a session are app-file edits, UI fixes, or build runs before the reconciliation ledger exists, treat that attempt as not correctly sequenced.
