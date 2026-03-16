@@ -1,0 +1,4 @@
+interface:
+  display_name: "Branch PR Reconciliation"
+  short_description: "Read PRs and branches, manually port useful changes, then close and clean up without merging"
+  default_prompt: "Use $branch-pr-reconciliation-skill to inspect all open PRs plus relevant local and remote branches, compare each diff against the current main branch, manually implement any still-useful changes on the current codebase, then close obsolete PRs and clean up stale branches without merging or cherry-picking."
