@@ -1,27 +1,28 @@
 ---
 name: branch-pr-reconciliation-skill
-description: "Reconcile a repo's open PRs, remote branches, and local branches by reading each diff against the current codebase, manually porting only the still-useful changes, then closing stale PRs and cleaning up branches without merging or cherry-picking. Use when the user wants branch and PR cleanup without losing worthwhile work."
+description: "Reconcile a repo's open PRs, remote branches, local branches, worktrees, and stashes by reading each diff against the current codebase, manually porting only the still-useful changes, then closing stale PRs and cleaning up all artifacts without merging or cherry-picking (except clean fast-forwards). Use when the user wants branch/PR cleanup without losing worthwhile work."
 ---
 
 # Branch PR Reconciliation Skill
 
-Use this skill when the user wants to clean up branch and PR sprawl without merging old work blindly.
+Use this skill when the user wants to clean up branch, PR, and worktree sprawl without merging old work blindly.
 
 The job is:
 
-1. fully reconcile branch, PR, worktree, and duplicate-work state first
+1. fully reconcile branch, PR, worktree, stash, and duplicate-work state first
 2. compare each relevant branch against the current codebase
 3. manually implement the useful parts on the current mainline
 4. close obsolete PRs
-5. delete stale branches only after the useful work is preserved or confirmed obsolete
+5. delete stale branches and worktrees only after the useful work is preserved or confirmed obsolete
+6. sync local and remote so everything is clean
 
 This skill is instructions only. Do not build helper tooling unless the user explicitly asks for it.
 
 ## Hard Rules
 
 - Reconciliation comes before implementation. No code edits before the reconciliation pass is complete.
-- Never merge old branches directly.
-- Never cherry-pick old commits as the integration method.
+- Never merge old branches directly. The ONE exception: a branch whose tip is a direct descendant of current main HEAD (verified with `git merge-base --is-ancestor main <branch>`) may be merged with `--ff-only`.
+- Never cherry-pick old commits as the integration method unless the cherry-pick applies with zero conflicts AND the result passes type-check.
 - Never assume a PR is useful because the title sounds useful.
 - Always compare old work against the current base branch and current files first.
 - Treat the current verified codebase as the source of truth, not the old branch narrative.
@@ -32,152 +33,267 @@ This skill is instructions only. Do not build helper tooling unless the user exp
 - Do not delete the user's current branch or any branch with clearly active ongoing work unless the user asked for aggressive cleanup and the branch is proven redundant.
 - `git diff --stat` alone does not count as reconciliation.
 - UI fixes, app edits, or build runs before branch and worktree reconciliation mean the procedure is mis-sequenced.
+- Never force-push to main.
+- Never use `git branch -D` (force delete) unless safe-delete `-d` fails AND you have confirmed the work is captured or valueless.
 
 ## Required First Pass
 
 Before touching application code, complete and record all of this:
 
-1. branch inventory
-2. worktree inventory
-3. local uncommitted work inventory
-4. branch graph and recent commit inventory
-5. open PR inventory
-6. branch-to-main diff review for all relevant branches
-7. duplicate and overlap detection
-8. explicit keep, port, close, delete, or defer decision per branch or PR
+1. branch inventory (local + remote)
+2. worktree inventory (paths, branches, status)
+3. stash inventory
+4. local uncommitted work inventory (in main worktree AND all linked worktrees)
+5. branch graph and recent commit inventory
+6. open PR inventory (with comments, reviews, and review feedback)
+7. closed/merged PR inventory (last 90 days)
+8. branch-to-main diff review for all relevant branches
+9. remote orphan detection (tracking refs with no remote, branches with no local)
+10. duplicate and overlap detection
+11. explicit keep, port, close, delete, or defer decision per branch or PR
 
 Do not start implementation until this pass is complete.
 
 ## Workflow
 
-### 1. Reconcile Repo State First
+### 1. Discover All State
 
-- Work in the real local repo.
-- Read the repo context first:
-  - `tree -I node_modules -L 2`
-  - `git status --short --branch`
-  - `git worktree list`
-  - `git branch --all --verbose --no-abbrev`
-  - `git remote -v`
-  - `git log --oneline --decorate --graph -30 --all`
-- Fetch the latest remote state:
-  - `git fetch --all --prune`
-- List the open PRs and their head branches:
-  - `gh pr list --state open`
-- If useful, also inspect closed PRs that still have unmerged branches or suspicious overlap.
-- Record local-only branches, remote-only branches, and detached or abandoned worktrees.
-- Detect overlap, not just existence:
-  - compare changed file sets
-  - compare commit ancestry
-  - compare branch diff themes
-- If two branches touch the same workflow, explicitly decide whether one supersedes the other.
+Work in the real local repo. Read everything:
 
-### 2. Build The Reconciliation Ledger
+```bash
+# Repo structure
+tree -I node_modules -L 2
 
-For each open PR or suspicious branch, record:
+# Git state
+git status --short --branch
+git worktree list
+git branch --all --verbose --no-abbrev
+git remote -v
+git stash list
+git log --oneline --decorate --graph -30 --all
+
+# Sync remote refs (read-only)
+git fetch --all --prune
+
+# PRs
+gh pr list --state open
+gh pr list --state closed --limit 30
+gh pr list --state merged --limit 30
+```
+
+Record:
+- local-only branches
+- remote-only branches
+- detached or abandoned worktrees
+- worktrees with uncommitted changes
+- stash entries and what they contain
+
+### 2. Deep-Read Every Branch and PR
+
+For each open PR and recently closed PR:
+
+```bash
+gh pr view <number> --comments
+gh pr view <number> --json title,body,comments,reviews,files,additions,deletions,commits
+git diff origin/main...origin/<head-branch> --stat
+git diff origin/main...origin/<head-branch> -- <relevant-files>
+```
+
+Read ALL review comments, inline code comments, requested changes, and the full PR body. Extract learnings even from PRs that will be discarded.
+
+For each non-main local branch:
+
+```bash
+git log main..<branch> --oneline --stat
+git log main..<branch> --pretty=format:'%H %s%n%b'
+git diff main...<branch> --stat
+```
+
+For each worktree:
+
+```bash
+git -C <worktree-path> status
+git -C <worktree-path> log --oneline -5
+```
+
+### 3. Build The Reconciliation Ledger
+
+For each open PR, closed PR, or branch, record:
 
 - PR number, title, author, head branch, base branch
 - whether the branch still exists on remote and locally
-- changed files
+- changed files and diff size
+- last activity date
 - whether the same area has already been modified on current `main`
 - whether the branch overlaps another branch or PR
 - whether there is uncommitted local work in the same area
-- first impression:
-  - `candidate`
-  - `duplicate`
-  - `obsolete`
-  - `needs-manual-port`
-  - `active-do-not-delete`
+- all key feedback from PR comments and reviews
+- classification:
+  - `ADOPT` - still valuable, code is compatible or nearly so
+  - `ADAPT` - valuable idea but code is stale, needs reimplementation
+  - `LEARN` - contains useful insights/feedback but code is obsolete
+  - `MERGED` - already in main
+  - `STALE` - outdated, superseded, or zero value
+  - `ORPHANED` - points to non-existent remote or invalid ref
+  - `ACTIVE` - do not touch, ongoing work
+- merge eligibility:
+  - `FF-ELIGIBLE` - verified fast-forward possible (`git merge-base --is-ancestor main <branch>`)
+  - `MANUAL-ONLY` - requires reimplementation
+  - `SKIP` - no merge needed (stale/orphaned/merged)
+
+Detect overlap:
+- compare changed file sets between branches
+- compare commit ancestry
+- compare branch diff themes
+- if two branches touch the same area, decide which supersedes
 
 This ledger is mandatory. No app edits before it exists.
 
-### 3. Review Every PR And Branch Properly
+### 4. Present Plan For User Review
 
-For each PR:
+Before executing, present the reconciliation plan to the user:
+- Items to implement (ADOPT/ADAPT) with priority order
+- Branches eligible for fast-forward merge
+- Items to skip with reasons
+- Cleanup targets (branches, worktrees, PRs to close/delete)
+- Risk flags (uncommitted work, potential conflicts, force-delete needed)
 
-- Read the PR body and commit list.
-- Read the actual diff against current base, not just the PR summary:
-  - `gh pr view <number> --comments --files`
-  - `git diff origin/main...origin/<head-branch> -- <relevant-files>`
-- Compare the old change with the current code in `main`.
-- Decide which parts are:
-  - still valuable
-  - already implemented elsewhere
-  - outdated
-  - harmful or incompatible
+Wait for user confirmation before proceeding.
 
-For remote branches without an open PR:
+### 5. Implement Enhancements
 
-- inspect the branch tip and diff against `origin/main`
-- review commits and changed files
-- apply the same classification
+For FF-ELIGIBLE branches:
+1. Re-verify: `git merge-base --is-ancestor main <branch>` must return 0
+2. `git merge --ff-only <branch>`
+3. If no longer FF (main moved): fall back to manual reimplementation
 
-For local branches and worktrees:
+For ADOPT items (clean code):
+1. Read the changes from the source branch
+2. If cherry-pick applies cleanly with zero conflicts: `git cherry-pick <sha>`
+3. Verify: `NODE_OPTIONS="--max-old-space-size=4096" npx tsc --noEmit`
+4. If type errors: `git reset HEAD~1` and reimplement manually instead
 
-- inspect unpushed commits
-- inspect uncommitted changes
-- decide whether they contain unique work, duplicate work, or stale work
-- never assume a branch is disposable just because it has no PR
+For ADAPT items (stale code):
+1. Read the diff to understand the intent
+2. Reimplement the logic against current codebase patterns
+3. Do not copy obsolete code
+4. Verify type-check passes after each change
 
-### 4. Manually Port Only The Useful Parts
+After each enhancement:
+- Run type-check
+- Commit: `git add -A && git commit -m 'feat: port <description> from <branch/PR#>'`
 
-- Re-implement useful behavior directly on the current branch.
-- Follow the current codebase patterns, naming, architecture, validation, and UX.
-- Do not copy obsolete code just to preserve history.
-- Do not revive hacks that were later fixed another way.
-- If a PR contains one useful idea buried in messy code, port only that idea.
-- If a PR is fully obsolete because the current codebase already solved it better, do not port anything.
+### 6. Verify Ported Work
 
-### 5. Verify The Ported Work
-
-After each meaningful manual port:
+After each meaningful port:
 
 - run the fastest real verification for the affected area
 - check type errors, lint or tests if relevant
 - inspect runtime behavior when the change is user-facing
-- verify no regression was introduced by adapting old ideas to current code
+- verify no regression was introduced
 
 Do not close the source PR until the useful changes are either:
-
-- manually ported and verified, or
+- ported and verified, or
 - proven obsolete, duplicate, or invalid
 
-### 6. Close PRs Deliberately
+### 7. Close PRs Deliberately
 
 When a PR is no longer needed:
-
-- close it explicitly
-- add a short closing note when helpful:
+- close it explicitly with `gh pr close <number> --comment '<reason>'`
+- add a short closing note:
   - useful parts were manually ported to current `main`
   - or the PR is obsolete because current `main` already superseded it
 
 Do not merge just to make the PR disappear.
 
-### 7. Clean Up Branches
+### 8. Clean Up All Artifacts
 
 After PR decisions are complete:
 
-- delete stale remote branches that are closed, obsolete, or fully superseded
-- prune local tracking refs
-- delete matching stale local branches that are no longer needed
-- keep any branch that still has unresolved active work
+**Branches:**
+- delete stale remote branches: `git push origin --delete <branch>`
+- delete matching stale local branches: `git branch -d <branch>` (safe delete only)
+- if `-d` fails: SKIP and document, do NOT force unless work is confirmed captured
+- prune local tracking refs: `git remote prune origin`
 
-Preferred order:
+**Worktrees:**
+- remove worktrees with no uncommitted changes and merged/stale branch: `git worktree remove <path>`
+- for worktrees with uncommitted changes: SKIP and warn the user
+- prune stale refs: `git worktree prune`
 
-1. reconcile all branches, worktrees, PRs, and overlaps
-2. port useful changes manually
-3. verify
-4. close PR
-5. delete remote branch if appropriate
-6. delete local branch if appropriate
+**Stashes:**
+- drop stash entries confirmed as already implemented: `git stash drop stash@{n}`
+- keep any uncertain stash entries
 
-### 8. Finish Cleanly
+**Garbage collection:**
+- `git gc --prune=now`
 
-- commit the manually integrated work as a fresh commit on the current branch
-- push the final branch
-- confirm which PRs were closed
-- confirm which branches were deleted
-- confirm which branches were intentionally kept
+### 9. Sync and Push
+
+```bash
+# Pre-push checks
+git status  # must be clean
+NODE_OPTIONS="--max-old-space-size=4096" npx tsc --noEmit  # must pass
+
+# Push
+git push origin main  # standard push, NEVER force
+
+# If rejected (remote ahead):
+git pull --rebase origin main
+# If rebase conflicts: STOP and document
+
+# Verify sync
+git fetch origin
+git log HEAD..origin/main --oneline  # must be empty
+git log origin/main..HEAD --oneline  # must be empty
+```
+
+### 10. Write Reconciliation Report
+
+Write to `.auto-claude/reconciliation-report.md`:
+
+```markdown
+# Git Reconciliation Report
+Date: <today>
+
+## Summary
+- Items discovered: N
+- Enhancements ported: N (list commit SHAs)
+- Branches merged (FF): N (list)
+- Deferred (needs manual work): N (list with reasons)
+- PRs closed: N (list with numbers)
+- Branches deleted: N (local + remote)
+- Worktrees removed: N
+
+## Implemented Enhancements
+<per-item: source branch/PR, what was ported, commit SHA>
+
+## Learnings Extracted
+<key insights from PR comments and reviews that inform future work>
+
+## Deferred Items
+<per-item: what, why, recommended action>
+
+## Final State
+- Local main SHA: <sha>
+- Remote main SHA: <sha>
+- Remaining branches: <list>
+- Remaining worktrees: <list>
+- Sync status: SYNCED / BLOCKED
+```
+
+### 11. Final Verification
+
+```bash
+git branch -a           # only main + intentionally kept
+git worktree list       # only main worktree
+git stash list          # empty or intentionally kept
+git status              # clean
+git diff origin/main    # empty (fully pushed)
+gh pr list --state open # no stale PRs
+```
+
+Cross-check: every VALUABLE item from the original ledger must be in one of: implemented, merged, deferred-with-docs. Zero items in unaccounted state.
 
 ## Decision Standard
 
