@@ -1,4 +1,4 @@
 interface:
   display_name: "Branch PR Reconciliation"
-  short_description: "Reconcile branches, PRs, and worktrees first, then manually port useful changes and clean up without merging"
-  default_prompt: "Use $branch-pr-reconciliation-skill to first complete a real reconciliation pass across open PRs, local branches, remote branches, worktrees, uncommitted work, and overlap with current main. Do not edit app code until that ledger exists. After that, manually implement any still-useful changes on the current codebase, then close obsolete PRs and clean up stale branches without merging or cherry-picking."
+  short_description: "Reconcile branches, PRs, worktrees, stashes, and parallel-agent work first, then manually port useful changes and clean up safely"
+  default_prompt: "Use $branch-pr-reconciliation-skill to first complete a real reconciliation pass across open PRs, closed PRs, local branches, remote branches, worktrees, stashes, uncommitted work, reflog, and any parallel-agent session evidence that may contain local-only work. Do not edit app code until that ledger exists. After that, manually preserve any still-useful changes on the current codebase, then close obsolete PRs and clean up stale branches, worktrees, and stashes without blind merges or cherry-picks."
