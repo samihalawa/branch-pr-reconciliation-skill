@@ -30,9 +30,19 @@ Typical failure mode:
 
 This skill exists to prevent that.
 
+## What Success Looks Like
+
+The skill is successful only when all of these are true:
+
+- all relevant state buckets were inspected
+- the useful work was either ported, proven already captured, or explicitly deferred
+- stale artifacts were cleaned only after proof
+- the repo was not left at a ledger or report checkpoint when a stable next execution step was available
+
 ## Hard Rules
 
 - Reconciliation comes before implementation. No app edits before the reconciliation ledger exists.
+- The reconciliation ledger is a working control surface, not the final product.
 - Never assume GitHub is the full source of truth. Local branches, worktrees, stashes, reflog, and parallel-agent sessions matter.
 - Never assume a PR is useful because the title sounds useful.
 - Never assume a branch is stale because it is closed, old, or merged-looking. Verify against current code.
@@ -49,6 +59,20 @@ This skill exists to prevent that.
 - Never force-push to main.
 - Never use `git branch -D` unless safe-delete `-d` fails and you have confirmed the work is captured or valueless.
 - Never claim "everything is clean" until every potentially relevant state bucket is accounted for: local branches, remote branches, worktrees, stashes, session-derived work, and uncommitted changes.
+- If the user asked for autonomous cleanup, do not stop at the ledger or ask for confirmation after it. Continue into preservation, verification, and cleanup unless the user explicitly asked to review first.
+- Do not create reconciliation report files by default. Only write one when the user explicitly asked for an artifact or another workflow consumes it.
+
+## Source Priority
+
+Use this order when claims conflict:
+
+1. current thread and current user wording
+2. current repo state, raw diffs, and current target files
+3. raw session logs, worktree state, and stash contents
+4. PR comments, review threads, and issue text
+5. prior reports, prior agent summaries, and other secondary writeups
+
+If a lower-priority source contradicts a higher-priority source, verify deeper before acting.
 
 ## When To Go Beyond GitHub
 
@@ -60,6 +84,19 @@ If the user mentions any of these, you must inspect local agent/session history 
 - claims that a prior reconciliation missed local work
 
 When that happens, raw session files are evidence. Read them sequentially. Do not rely on summaries.
+
+If recent cross-app or typo-heavy history matters and the environment has them, use Chronicle and Screenpipe as additional evidence sources:
+
+- Chronicle:
+  - `~/.codex/skills/chronicle/SKILL.md`
+  - `~/.codex/memories_extensions/chronicle/instructions.md`
+  - relevant `~/.codex/memories_extensions/chronicle/resources/*.md`
+- Screenpipe:
+  - `~/.codex/screenpipe-memories.md`
+  - any user-provided Screenpipe export or instruction in the thread
+  - raw `~/.screenpipe/` artifacts only when recent app/audio/window evidence is needed
+
+Chronicle and Screenpipe are evidence, not authority. Record their coverage in the source ledger as `full`, `partial`, `sampled`, or `not available`.
 
 ## Required First Pass
 
@@ -95,13 +132,16 @@ git status --short --branch
 git remote -v
 git branch --show-current
 git fetch --all --prune
+BASE_BRANCH="$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD | sed 's@^origin/@@')"
+[ -n "$BASE_BRANCH" ] || BASE_BRANCH="$(git remote show origin | sed -n '/HEAD branch/s/.*: //p')"
+printf 'BASE_BRANCH=%s\n' "$BASE_BRANCH"
 ```
 
 Record:
 
 - repo path
 - current branch
-- main branch name
+- default integration branch name
 - whether the current checkout is the main worktree or a linked worktree
 
 ### 2. Discover All Git State
@@ -195,21 +235,27 @@ For each open PR and recently relevant closed PR:
 
 ```bash
 gh pr view <number> --comments
-gh pr view <number> --json title,body,comments,reviews,files,additions,deletions,commits,headRefName,baseRefName,author
-git diff origin/main...origin/<head-branch> --stat
-git diff origin/main...origin/<head-branch> -- <relevant-files>
-git log origin/main..<head-branch> --oneline --stat
+gh pr view <number> --json title,body,comments,reviews,files,additions,deletions,commits,headRefName,baseRefName,author,headRepositoryOwner,headRepository
+git diff origin/$BASE_BRANCH...origin/<head-branch> --stat
+git diff origin/$BASE_BRANCH...origin/<head-branch> -- <relevant-files>
+git log origin/$BASE_BRANCH..<head-branch> --oneline --stat
 ```
 
 Read all useful review comments, requested changes, and follow-up comments. Extract learnings even from PRs that will be discarded.
 
+For forked PRs or PRs whose remote branch is not present under `origin/<head-branch>`:
+
+- inspect the PR metadata first
+- fetch the exact head ref or head SHA into a temporary local branch only for inspection if needed
+- do not let "fork branch not local" become a reason to skip diff review
+
 For each non-main local branch:
 
 ```bash
-git log main..<branch> --oneline --stat
-git log main..<branch> --pretty=format:'%H %s%n%b'
-git diff main...<branch> --stat
-git diff main...<branch> -- <relevant-files>
+git log $BASE_BRANCH..<branch> --oneline --stat
+git log $BASE_BRANCH..<branch> --pretty=format:'%H %s%n%b'
+git diff $BASE_BRANCH...<branch> --stat
+git diff $BASE_BRANCH...<branch> -- <relevant-files>
 ```
 
 ### 6. Build The Reconciliation Ledger
@@ -254,7 +300,7 @@ This ledger is mandatory. No app edits before it exists.
 
 Default behavior:
 
-- if the user explicitly asked for end-to-end cleanup, proceed after the ledger and a brief checkpoint
+- if the user explicitly asked for end-to-end cleanup, proceed after the ledger without a confirmation stop
 - if the user explicitly asked to review the plan first, stop for confirmation
 
 Do not hide behind "waiting for confirmation" when the user clearly asked you to finish the reconciliation.
@@ -263,7 +309,7 @@ Do not hide behind "waiting for confirmation" when the user clearly asked you to
 
 For `FF-ELIGIBLE` branches:
 
-1. Re-verify: `git merge-base --is-ancestor main <branch>`
+1. Re-verify: `git merge-base --is-ancestor "$BASE_BRANCH" <branch>`
 2. Use `git merge --ff-only <branch>`
 3. If no longer FF-eligible, fall back to manual integration
 
@@ -308,7 +354,7 @@ gh pr close <number> --comment '<reason>'
 Closing note should say either:
 
 - useful parts were manually ported to current `main`, or
-- current `main` already supersedes the PR
+- current default branch already supersedes the PR
 
 Do not merge just to make a PR disappear.
 
@@ -326,6 +372,7 @@ git remote prune origin
 
 - Use safe delete first
 - If safe delete fails, skip and document unless the work is fully accounted for
+- If remote deletion is blocked by policy, document that exact policy or error and leave the branch in `DEFERRED`, not `CLEAN`
 
 **Worktrees**
 
@@ -358,13 +405,13 @@ git gc --prune=now
 ```bash
 git status
 NODE_OPTIONS="--max-old-space-size=4096" npx tsc --noEmit
-git push origin main
+git push origin "$BASE_BRANCH"
 ```
 
 If push is rejected:
 
 ```bash
-git pull --rebase origin main
+git pull --rebase origin "$BASE_BRANCH"
 ```
 
 If rebase conflicts, stop and document the exact blocker.
@@ -373,21 +420,17 @@ Verify sync:
 
 ```bash
 git fetch origin
-git log HEAD..origin/main --oneline
-git log origin/main..HEAD --oneline
+git log HEAD..origin/$BASE_BRANCH --oneline
+git log origin/$BASE_BRANCH..HEAD --oneline
 ```
 
 Both must be empty before claiming success.
 
-### 13. Write Reconciliation Report
+### 13. Return A Concise Reconciliation Summary
 
-Write to `.auto-claude/reconciliation-report.md`:
+By default, return a concise summary in the response, not a repo file. Cover only:
 
-```markdown
-# Git Reconciliation Report
-Date: <today>
-
-## Summary
+```text
 - Items discovered: N
 - Enhancements ported: N
 - Branches merged (FF): N
@@ -396,28 +439,17 @@ Date: <today>
 - Branches deleted: N
 - Worktrees removed: N
 - Stashes dropped: N
-
-## Ledger
-<per item: identifier, classification, decision, proof>
-
-## Implemented Enhancements
-<source branch/PR/session, what was ported, commit SHA>
-
-## Learnings Extracted
-<key insights from PR comments, reviews, and session logs>
-
-## Deferred Items
-<what, why, recommended action>
-
-## Final State
-- Local main SHA: <sha>
-- Remote main SHA: <sha>
+- Still active or deferred items: <identifier + exact reason>
+- Final local SHA on base branch: <sha>
+- Final remote SHA on base branch: <sha>
 - Remaining branches: <list>
 - Remaining worktrees: <list>
 - Remaining stashes: <list>
 - Remaining active sessions affecting repo: <list or none>
 - Sync status: SYNCED / BLOCKED
 ```
+
+Write a file artifact only if the user explicitly asked for one.
 
 ### 14. Final Verification
 
@@ -428,7 +460,7 @@ git branch -a
 git worktree list
 git stash list
 git status
-git diff origin/main
+git diff origin/$BASE_BRANCH
 gh pr list --state open
 ```
 
