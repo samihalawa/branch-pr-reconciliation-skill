@@ -49,6 +49,7 @@ The skill is successful only when all of these are true:
 - Never assume a prior report, prior agent summary, or prior "done" claim is accurate. Treat it as a lead only.
 - Never attribute a commit, branch, or uncommitted diff to a specific agent from naming alone. Use timestamps, reflog, session logs, and actual branch state.
 - Always compare old work against the current base branch and current files first.
+- When two items represent the same outcome, preserve the stronger canonical implementation and retire the weaker duplicate rather than keeping both alive in parallel.
 - Port useful ideas manually so the final implementation fits the current codebase.
 - If an old change conflicts with current architecture, adapt it or discard it.
 - Close PRs only after you understand whether anything in them still matters.
@@ -337,9 +338,11 @@ After each meaningful port:
 After each meaningful port:
 
 - run the fastest real verification for the affected area
+- verify at the same layer as the claim; inventory, build health, and parent-surface success only decide where to inspect next
 - inspect runtime behavior if the change is user-facing
 - verify no regression was introduced
 - confirm the source item is now implemented, obsolete, or still deferred
+- if the port fixed a repeated class of overlap or duplicate work, sweep the nearest sibling branches, worktrees, or PRs before claiming clean
 
 Do not close the source PR until the useful parts are either ported and verified or proven obsolete.
 
@@ -472,6 +475,8 @@ Every valuable item from the ledger must end in exactly one of:
 - already merged
 - deliberately deferred with reason
 - proven stale
+
+Inventory alone is not correctness. Presence, freshness, and green command output only prove that the next proof step should move deeper.
 
 Zero unaccounted items.
 
