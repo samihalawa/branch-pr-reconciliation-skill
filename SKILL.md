@@ -1,130 +1,91 @@
 ---
 name: branch-pr-reconciliation-skill
-description: "Reconcile a repo's open PRs, remote branches, local branches, worktrees, stashes, and parallel-agent work by reading real diffs and raw session evidence, then manually port only the still-useful changes onto the current mainline and clean up safely."
+description: "Autonomously reconcile every relevant PR, remote branch, local branch, worktree, stash, reflog lead, and agent-owned change into the current default branch by fully reading the evidence and manually reimplementing only what still improves the current codebase; then verify, push, and safely remove all accounted-for residue without merge or cherry-pick shortcuts."
 ---
 
 # Branch PR Reconciliation Skill
 
-Use this skill when the user wants branch, PR, worktree, or agent-work sprawl cleaned up without losing worthwhile work.
+Use this skill when the user wants branch, PR, worktree, stash, or parallel-agent sprawl reconciled without losing worthwhile work.
 
-The real job is:
+The finish line is normally:
 
-1. discover **all** state first, not just GitHub PRs
-2. recover intent from raw diffs, worktrees, stashes, and agent/session logs
-3. compare every relevant item against the current verified codebase
-4. preserve useful work on the current mainline
-5. close or delete only what is proven obsolete or fully captured
-6. leave the repo, remote, worktrees, and session-related artifacts in a clean truthful state
+- every potentially unique item is inspected and accounted for
+- every still-useful behavior is manually implemented on the current default branch
+- every obsolete or captured PR, branch, worktree, stash, and temporary ref is removed when permitted
+- the default branch is clean and has the same commit locally and remotely
+- no useful committed, uncommitted, review-only, or session-only work is lost
 
-This skill is instructions only. Do not build helper tooling unless the user explicitly asks for it.
+This is an execution skill, not a report generator. Keep the ledger in the platform's native checklist or plan surface and return only a concise text summary. Do not create helper scripts or report files unless the user explicitly asks for an artifact.
 
-## Why This Skill Exists
+## Non-Negotiable Rules
 
-Typical failure mode:
+- Reconcile before editing application code. The inventory and per-item decisions must exist first.
+- Use the current thread, current default-branch files, and raw Git/GitHub evidence as truth. Prior summaries and “done” claims are leads only.
+- Never integrate a candidate branch or PR with `git merge`, `git cherry-pick`, `git am`, or by applying its whole patch.
+- A fast-forward-only pull of the default branch from its own upstream is synchronization, not candidate integration, and is allowed before edits.
+- Read each candidate's commits and full relevant diff, then manually implement only the useful intent against the current architecture.
+- A conflict-free patch is not proof that old code is still correct.
+- Read every open PR fully: body, commits, changed files, issue comments, reviews, inline review comments, and current diff.
+- Inventory every closed and merged PR. Deep-read any whose content is not already proven represented on the default branch.
+- Inspect every local and remote branch, every worktree, every stash, uncommitted changes in every worktree, recent reflog leads, and repo-scoped active-agent/session evidence.
+- Do not infer ownership or value from a branch name, commit subject, PR title, age, or closed state.
+- When several items seek the same outcome, retain one stronger canonical implementation and retire the weaker duplicates.
+- Never delete first and investigate later. Preserve recoverability, classify the item, implement or reject it with evidence, verify, then clean it.
+- Do not run `git gc --prune=now` during reconciliation. It destroys the easiest recovery window and adds no functional value.
+- Never force-push the default branch.
+- If the user asked to reconcile everything, proceed without a plan-approval stop. Ask only when an external fact is undiscoverable and a wrong assumption would be materially destructive.
+- Do not stop at inventory, a ledger, a progress note, or a written report while preservation or cleanup remains safely executable.
+- Empty command output is a fact, not automatic success. Read and quote the exact evidence that drives each decision.
 
-- agent checks open PRs only
-- misses local worktrees, stashes, or parallel agents
-- trusts prior "done" claims
-- deletes or ignores work that only existed locally
-- reports "clean" while useful work is still sitting in another worktree or branch
+## Speed Contract
 
-This skill exists to prevent that.
+Careful does not mean serial or slow.
 
-## What Success Looks Like
-
-The skill is successful only when all of these are true:
-
-- all relevant state buckets were inspected
-- the useful work was either ported, proven already captured, or explicitly deferred
-- stale artifacts were cleaned only after proof
-- the repo was not left at a ledger or report checkpoint when a stable next execution step was available
-
-## Hard Rules
-
-- Reconciliation comes before implementation. No app edits before the reconciliation ledger exists.
-- The reconciliation ledger is a working control surface, not the final product.
-- Never assume GitHub is the full source of truth. Local branches, worktrees, stashes, reflog, and parallel-agent sessions matter.
-- Never assume a PR is useful because the title sounds useful.
-- Never assume a branch is stale because it is closed, old, or merged-looking. Verify against current code.
-- Never assume a prior report, prior agent summary, or prior "done" claim is accurate. Treat it as a lead only.
-- Never attribute a commit, branch, or uncommitted diff to a specific agent from naming alone. Use timestamps, reflog, session logs, and actual branch state.
-- Always compare old work against the current base branch and current files first.
-- When two items represent the same outcome, preserve the stronger canonical implementation and retire the weaker duplicate rather than keeping both alive in parallel.
-- Port useful ideas manually so the final implementation fits the current codebase.
-- If an old change conflicts with current architecture, adapt it or discard it.
-- Close PRs only after you understand whether anything in them still matters.
-- Delete branches, worktrees, or stashes only after the useful work is preserved or clearly obsolete.
-- Do not delete the user's current branch or any branch with clearly active ongoing work unless the user asked for aggressive cleanup and the branch is proven redundant.
-- `git diff --stat` alone does not count as reconciliation.
-- UI fixes, app edits, or build runs before branch and worktree reconciliation mean the procedure is mis-sequenced.
-- Never force-push to main.
-- Never use `git branch -D` unless safe-delete `-d` fails and you have confirmed the work is captured or valueless.
-- Never claim "everything is clean" until every potentially relevant state bucket is accounted for: local branches, remote branches, worktrees, stashes, session-derived work, and uncommitted changes.
-- If the user asked for autonomous cleanup, do not stop at the ledger or ask for confirmation after it. Continue into preservation, verification, and cleanup unless the user explicitly asked to review first.
-- Do not create reconciliation report files by default. Only write one when the user explicitly asked for an artifact or another workflow consumes it.
+- Use the IDE/client-native checklist (`update_plan`, TodoWrite, or equivalent) as the live ledger.
+- Batch independent read-only inventory commands.
+- Parallelize independent PR/branch/worktree reads when the platform permits, but never give overlapping write ownership.
+- Keep mutation serial: one canonical default-branch implementation path, one cleanup pass, one final push.
+- Start from exact refs, paths, SHAs, and PR numbers. Avoid broad home-directory scans.
+- Search session history only with repo path, branch name, worktree path, commit SHA, or changed-file terms.
+- Use Chronicle or Screenpipe only when Git, GitHub, and scoped session evidence do not resolve ambiguous recent intent.
+- Cache each decision in the native ledger so the same branch or PR is not repeatedly re-audited.
+- Prefer one bounded command fanout followed by focused deep reads over many tiny commands.
 
 ## Source Priority
 
-Use this order when claims conflict:
+When evidence conflicts:
 
-1. current thread and current user wording
-2. current repo state, raw diffs, and current target files
-3. raw session logs, worktree state, and stash contents
-4. PR comments, review threads, and issue text
-5. prior reports, prior agent summaries, and other secondary writeups
+1. current user wording
+2. current default-branch files plus raw Git objects and diffs
+3. dirty worktree and stash contents
+4. GitHub PR body, comments, reviews, commits, and files
+5. repo-scoped active session logs and agent checkpoints
+6. Chronicle and Screenpipe evidence
+7. prior reports and summaries
 
-If a lower-priority source contradicts a higher-priority source, verify deeper before acting.
+Lower-priority evidence can reveal missed intent, but it cannot override current source truth without verification.
 
-## When To Go Beyond GitHub
+## Target State
 
-If the user mentions any of these, you must inspect local agent/session history before deciding:
+For a full reconciliation request, target:
 
-- a named conversation, thread, or report
-- Codex, Claude, Kimi, Cursor, Aider, Continue, or "parallel agents"
-- "worktrees", "stashes", "logs", "sessions", "previous agents", "check again", "missed work"
-- claims that a prior reconciliation missed local work
+- one detected default integration branch
+- one main worktree
+- no unaccounted local branches
+- no unaccounted origin branches
+- no removable stale open PRs
+- no extra removable worktrees
+- no unaccounted stashes
+- clean status
+- identical local and remote default-branch SHA
 
-When that happens, raw session files are evidence. Read them sequentially. Do not rely on summaries.
-
-If recent cross-app or typo-heavy history matters and the environment has them, use Chronicle and Screenpipe as additional evidence sources:
-
-- Chronicle:
-  - `~/.codex/skills/chronicle/SKILL.md`
-  - `~/.codex/memories_extensions/chronicle/instructions.md`
-  - relevant `~/.codex/memories_extensions/chronicle/resources/*.md`
-- Screenpipe:
-  - `~/.codex/screenpipe-memories.md`
-  - any user-provided Screenpipe export or instruction in the thread
-  - raw `~/.screenpipe/` artifacts only when recent app/audio/window evidence is needed
-
-Chronicle and Screenpipe are evidence, not authority. Record their coverage in the source ledger as `full`, `partial`, `sampled`, or `not available`.
-
-## Required First Pass
-
-Before touching application code, complete and record all of this:
-
-1. repo identity and current branch
-2. local + remote branch inventory
-3. worktree inventory
-4. stash inventory
-5. local uncommitted work inventory in the main worktree and every linked worktree
-6. branch graph, reflog, and recent commit inventory
-7. open PR inventory with comments, reviews, and review feedback
-8. recently closed/merged PR inventory
-9. branch-to-main diff review for all relevant branches
-10. remote orphan detection
-11. duplicate and overlap detection
-12. parallel-agent/session inventory
-13. raw session/log review for any referenced branch, task, or report
-14. explicit keep, port, close, delete, or defer decision per branch, PR, worktree, stash, and session-derived work item
-
-Do not start implementation until this pass is complete.
+If the repository explicitly requires another long-lived protected branch, classify and verify it rather than deleting it blindly. A fork-owned PR branch or server-protected branch that cannot be removed is `BLOCKED_EXTERNAL`, not “clean.”
 
 ## Workflow
 
-### 1. Confirm The Real Repo And Current State
+### 1. Prove Repo Identity And Fetch The Base
 
-Work in the real local repo first:
+Work in the real repository:
 
 ```bash
 pwd
@@ -138,361 +99,343 @@ BASE_BRANCH="$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD | sed '
 printf 'BASE_BRANCH=%s\n' "$BASE_BRANCH"
 ```
 
+Do not pull the default branch into a checkout of a different branch. Fetching is safe for the first pass; pull only after dirty state and alternate worktrees have been inventoried and preserved.
+
 Record:
 
-- repo path
+- absolute repo root
 - current branch
-- default integration branch name
-- whether the current checkout is the main worktree or a linked worktree
+- detected default branch
+- current local and remote SHA
+- whether this is the main or a linked worktree
+- dirty-state owner and scope, if any
 
-### 2. Discover All Git State
+Never assume the branch is named `main`; use the detected default branch throughout.
 
-Read everything:
+### 2. Create The Native Reconciliation Checklist
+
+Create checklist sections for:
+
+1. repo/base proof
+2. local branches
+3. origin and fork refs
+4. open, closed, and merged PRs
+5. worktrees and dirty state
+6. stashes and reflog leads
+7. active repo-scoped agents/sessions
+8. manual ports
+9. verification
+10. PR/ref/worktree/stash cleanup
+11. push and local/remote equality
+
+Add one item for every discovered artifact. Do not write `.auto-claude/reconciliation-report.md`, `RECONCILIATION.md`, or a similar report by default.
+
+### 3. Run One Complete Read-Only Inventory
+
+Batch the real state:
 
 ```bash
-# Repo structure
-tree -I node_modules -L 2
-
-# Git state
 git status --short --branch
 git worktree list --porcelain
-git branch --all --verbose --no-abbrev
-git remote -v
-git stash list
-git log --oneline --decorate --graph -50 --all
-git reflog --date=iso -50
-
-# PRs
-gh pr list --state open
-gh pr list --state closed --limit 50
-gh pr list --state merged --limit 50
+git for-each-ref --sort=-committerdate \
+  --format='%(refname) %(objectname) %(committerdate:iso8601) %(subject)' \
+  refs/heads refs/remotes
+git stash list --date=iso
+git log --oneline --decorate --graph -80 --all
+git reflog --date=iso -80
+git ls-remote --heads origin
+gh repo view --json nameWithOwner,url,visibility,defaultBranchRef,isArchived
+gh pr list --state all --limit 500 \
+  --json number,title,state,isDraft,headRefName,headRefOid,baseRefName,author,updatedAt,closedAt,mergedAt,url
+gh api --paginate 'repos/{owner}/{repo}/pulls?state=all&per_page=100'
 ```
 
-Record:
-
-- local-only branches
-- remote-only branches
-- worktrees and their branch bindings
-- detached or abandoned worktrees
-- worktrees with uncommitted changes
-- stash entries and what they contain
-- recently moved or deleted branches revealed by reflog
-
-### 3. Discover Parallel Agent And Session State
-
-Do not assume one agent or one session store.
-
-Check for likely agent/session roots:
-
-```bash
-ps aux | rg -i 'codex|claude|kimi|cursor|aider|continue' || true
-
-find ~/.codex ~/.claude ~/.kimi ~/.cursor ~/.aider ~/.continue \
-  -maxdepth 4 \
-  \( -name '*.jsonl' -o -name '*.md' -o -name '*.log' \) \
-  2>/dev/null | tail -200
-```
-
-If the user provided a specific session ID, conversation title, or report name:
-
-- locate the exact session/report file
-- read the raw file sequentially
-- extract branches mentioned, worktrees mentioned, files touched, commits claimed, and unresolved items
-
-At minimum, identify:
-
-- main orchestrator sessions
-- spawned worker/subagent sessions
-- which repo each session refers to
-- whether a session produced code edits, a commit, a stash, a report, or only analysis
-
-When multiple agents are active on the same repo, explicitly map:
-
-- which branch each agent used
-- which files each agent touched
-- whether a commit landed on `main` or on a side branch
-- whether one agent branched from another agent's already-pushed commit
-
-Do not infer authorship from commit-message wording or from issue IDs that may have been copied between agents.
-
-### 4. Inventory Worktrees And Uncommitted Work Properly
-
-For each worktree:
+For every linked worktree:
 
 ```bash
 git -C <worktree-path> status --short --branch
-git -C <worktree-path> log --oneline -5
-git -C <worktree-path> diff --stat
-git -C <worktree-path> stash list
+git -C <worktree-path> log --oneline --decorate -10
+git -C <worktree-path> diff --name-status
+git -C <worktree-path> diff --cached --name-status
+git -C <worktree-path> ls-files --others --exclude-standard
 ```
 
-Also inspect possible abandoned worktree directories the repo no longer lists if the user suspects cleanup drift.
+Record local-only refs, remote-only refs, detached worktrees, dirty worktrees, unique commits, missing upstreams, PR heads from forks, and stale tracking refs.
 
-Do not stop at clean worktrees. A clean worktree can still point to a branch with unique commits.
+### 4. Preserve Recoverability Before Cleanup
 
-### 5. Deep-Read Every Branch And PR
-
-For each open PR and recently relevant closed PR:
+After fetching all reachable refs and before deleting any ref:
 
 ```bash
-gh pr view <number> --comments
-gh pr view <number> --json title,body,comments,reviews,files,additions,deletions,commits,headRefName,baseRefName,author,headRepositoryOwner,headRepository
-git diff origin/$BASE_BRANCH...origin/<head-branch> --stat
-git diff origin/$BASE_BRANCH...origin/<head-branch> -- <relevant-files>
-git log origin/$BASE_BRANCH..<head-branch> --oneline --stat
+RECON_BACKUP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/branch-reconcile.XXXXXX")"
+git bundle create "$RECON_BACKUP_DIR/all-refs.bundle" --all
+git bundle verify "$RECON_BACKUP_DIR/all-refs.bundle"
+printf 'RECON_BACKUP_DIR=%s\n' "$RECON_BACKUP_DIR"
 ```
 
-Read all useful review comments, requested changes, and follow-up comments. Extract learnings even from PRs that will be discarded.
+This is a temporary safety barrier, not a report or substitute for integration.
 
-For forked PRs or PRs whose remote branch is not present under `origin/<head-branch>`:
+For every dirty worktree:
 
-- inspect the PR metadata first
-- fetch the exact head ref or head SHA into a temporary local branch only for inspection if needed
-- do not let "fork branch not local" become a reason to skip diff review
+- identify tracked, staged, untracked, and intentionally ignored source/assets
+- coordinate any active writer to checkpoint through the platform-native agent/thread tools
+- if the user requested full autonomous cleanup and no writer can checkpoint, preserve the dirty tracked and untracked state with a clearly named temporary stash using `git stash push -u`
+- inspect that stash fully before changing or dropping it
+- do not archive build output, dependencies, caches, or generated noise as product work
 
-For each non-main local branch:
+Do not remove a dirty worktree merely because its branch commits are backed up; uncommitted files require separate preservation.
+
+Once dirty state is accounted for, choose the clean worktree that will own the default-branch implementation. Check out the detected default branch there and synchronize only that branch:
 
 ```bash
-git log $BASE_BRANCH..<branch> --oneline --stat
-git log $BASE_BRANCH..<branch> --pretty=format:'%H %s%n%b'
-git diff $BASE_BRANCH...<branch> --stat
-git diff $BASE_BRANCH...<branch> -- <relevant-files>
+git switch "$BASE_BRANCH"
+git rev-list --left-right --count "HEAD...origin/$BASE_BRANCH"
 ```
 
-### 6. Build The Reconciliation Ledger
+If the default branch is already checked out in another linked worktree, run the pull in that exact worktree instead of switching or merging it into the current checkout.
 
-For each open PR, closed PR, local branch, remote-only branch, worktree, stash, or session-derived work item, record:
+Interpret the divergence before pulling:
 
-- identifier: PR number, branch name, worktree path, stash ID, session ID
-- author / agent / source
-- head branch and base branch when applicable
-- whether the branch still exists locally and remotely
-- changed files and rough diff size
-- last activity date
-- whether the same area has already been modified on current `main`
-- whether the item overlaps another branch, PR, worktree, or stash
-- whether there is uncommitted local work in the same area
-- all key feedback from PR comments and reviews
-- whether the item contains actual code, only notes, or only claims
-- classification:
-  - `ADOPT` - still valuable and implementation is compatible or nearly so
-  - `ADAPT` - valuable idea but code is stale and needs reimplementation
-  - `LEARN` - useful insights or feedback only
-  - `MERGED` - already in main
-  - `STALE` - outdated, superseded, or zero value
-  - `ORPHANED` - invalid ref, missing remote, detached worktree, or abandoned artifact
-  - `ACTIVE` - ongoing work, do not touch without explicit coordination
-- merge eligibility:
-  - `FF-ELIGIBLE` - verified fast-forward possible
-  - `MANUAL-ONLY` - requires reimplementation
-  - `SKIP` - no merge needed
+- local ahead only: keep the local commits, inspect them as default-branch work, and push after verification
+- remote ahead only: run `git pull --ff-only origin "$BASE_BRANCH"`
+- both sides ahead: preserve both tips, read both commit ranges and diffs, then rebase the current local default-branch commits onto `origin/$BASE_BRANCH` or manually replay them when their implementation is stale; never reset or overwrite either side
 
-Detect overlap using all of:
+### 5. Deep-Read Every Candidate
 
-- changed file sets
-- commit ancestry
-- branch themes
-- session/log evidence
-- actual code already on main
-
-This ledger is mandatory. No app edits before it exists.
-
-### 7. Decide Autonomy Level Correctly
-
-Default behavior:
-
-- if the user explicitly asked for end-to-end cleanup, proceed after the ledger without a confirmation stop
-- if the user explicitly asked to review the plan first, stop for confirmation
-
-Do not hide behind "waiting for confirmation" when the user clearly asked you to finish the reconciliation.
-
-### 8. Implement Preserved Work
-
-For `FF-ELIGIBLE` branches:
-
-1. Re-verify: `git merge-base --is-ancestor "$BASE_BRANCH" <branch>`
-2. Use `git merge --ff-only <branch>`
-3. If no longer FF-eligible, fall back to manual integration
-
-For `ADOPT` items:
-
-1. Read the source diff and current target files
-2. Prefer manual porting
-3. Only cherry-pick if it applies with zero conflicts and the result passes verification
-4. If a cherry-pick causes issues, back it out and reimplement manually
-
-For `ADAPT` items:
-
-1. Read the old diff to understand intent
-2. Reimplement the behavior against current architecture
-3. Do not copy obsolete code blindly
-
-After each meaningful port:
-
-- run the fastest relevant verification
-- run type-check if appropriate
-- commit with a scoped message
-
-### 9. Verify Ported Work
-
-After each meaningful port:
-
-- run the fastest real verification for the affected area
-- verify at the same layer as the claim; inventory, build health, and parent-surface success only decide where to inspect next
-- inspect runtime behavior if the change is user-facing
-- verify no regression was introduced
-- confirm the source item is now implemented, obsolete, or still deferred
-- if the port fixed a repeated class of overlap or duplicate work, sweep the nearest sibling branches, worktrees, or PRs before claiming clean
-
-Do not close the source PR until the useful parts are either ported and verified or proven obsolete.
-
-### 10. Close PRs Deliberately
-
-When a PR is no longer needed:
+For each non-default local or remote branch:
 
 ```bash
-gh pr close <number> --comment '<reason>'
+git rev-list --left-right --count "origin/$BASE_BRANCH...<ref>"
+git log "origin/$BASE_BRANCH..<ref>" --reverse --format=fuller --stat
+git diff "origin/$BASE_BRANCH...<ref>" --name-status
+git diff "origin/$BASE_BRANCH...<ref>"
 ```
 
-Closing note should say either:
+Read the current default-branch versions of all changed files. Determine whether each change is:
 
-- useful parts were manually ported to current `main`, or
-- current default branch already supersedes the PR
+- already present, perhaps under a different implementation
+- still useful exactly in intent but stale in code
+- useful only as a lesson, test case, or review insight
+- obsolete, duplicated, harmful, or incompatible
 
-Do not merge just to make a PR disappear.
+For every open PR, read all source layers:
 
-### 11. Clean Up Artifacts Safely
+```bash
+gh pr view <number> --json \
+  title,body,state,isDraft,author,headRefName,headRefOid,baseRefName,commits,files,additions,deletions,comments,reviews
+gh pr diff <number>
+gh api --paginate repos/{owner}/{repo}/issues/<number>/comments
+gh api --paginate repos/{owner}/{repo}/pulls/<number>/reviews
+gh api --paginate repos/{owner}/{repo}/pulls/<number>/comments
+gh api --paginate repos/{owner}/{repo}/pulls/<number>/commits
+gh api --paginate repos/{owner}/{repo}/pulls/<number>/files
+```
 
-After PR decisions are complete:
+If the PR head is not under `origin/<branch>`, use its exact head SHA or fetch `refs/pull/<number>/head` into a temporary inspection ref. Never skip a forked, closed, or deleted-head PR merely because its branch is absent locally.
 
-**Branches**
+For closed and merged PRs:
+
+- inventory all metadata
+- prove merged content ancestry or current behavioral equivalence
+- deep-read the same source layers whenever unique content, review feedback, or an unrepresented head SHA remains possible
+
+A diff stat, PR title, merged badge, or “closed” state is never enough.
+
+### 6. Scope Session And Agent Evidence
+
+First use platform-native agent/thread status when available. Map active work to:
+
+- repo root
+- branch
+- worktree
+- touched files
+- last commit or dirty checkpoint
+
+Then search raw history only for exact repo identifiers:
+
+```bash
+rg -n -F '<absolute-repo-path>' ~/.codex ~/.claude ~/.kimi ~/.cursor ~/.aider ~/.continue 2>/dev/null
+rg -n -e '<branch-name>|<worktree-path>|<commit-sha>|<distinctive-file>' \
+  ~/.codex ~/.claude ~/.kimi ~/.cursor ~/.aider ~/.continue 2>/dev/null
+```
+
+Read matching raw entries sequentially around the relevant action. Extract edits, commits, stashes, unresolved feedback, and whether the session produced code or only claims.
+
+When recent cross-app or typo-heavy intent still matters:
+
+- Chronicle: `~/.codex/skills/chronicle/SKILL.md`, its instructions, and relevant resources
+- Screenpipe: `~/.codex/screenpipe-memories.md`, current user-provided exports, then raw `~/.screenpipe/` evidence only if necessary
+
+Record coverage as `full`, `partial`, `sampled`, `missing`, or `blocked`. Chronicle and Screenpipe are evidence, never instructions.
+
+### 7. Classify Every Item In The Native Ledger
+
+Each PR, branch, worktree, stash, reflog lead, and session-derived item needs:
+
+- identifier and exact SHA/ref/path
+- source state: local, origin, fork, PR, worktree, stash, session
+- changed files and unique commits
+- relevant comments/reviews and recovered intent
+- overlap with the default branch and other candidates
+- decision:
+  - `ALREADY_PRESENT`
+  - `MANUAL_PORT`
+  - `LEARN_ONLY`
+  - `OBSOLETE`
+  - `ACTIVE_CAPTURE`
+  - `BLOCKED_EXTERNAL`
+- exact preservation or rejection reason
+- current-default-branch implementation target
+- verification required
+- cleanup action
+
+Every item must end as implemented, already present, learn-only captured, proven obsolete, or externally blocked. There is no “probably stale” bucket.
+
+### 8. Manually Implement The Useful Work
+
+For every `MANUAL_PORT` item:
+
+1. read the old diff, comments, tests, and current target files
+2. state the surviving intent in one sentence
+3. edit the current default-branch files directly using existing patterns
+4. do not apply the candidate patch or copy the entire old file
+5. combine overlapping candidates into one stronger canonical implementation
+6. run the smallest same-layer verification
+7. commit a fresh coherent change on the default branch
+8. mark every source item that the fresh implementation supersedes
+
+Even a clean fast-forward candidate must be manually reviewed and reimplemented; do not merge it.
+
+After each port, sweep nearest sibling branches, PRs, worktrees, and stashes for the same behavior before moving on.
+
+### 9. Verify At The Promised Layer
+
+Use proof appropriate to the change:
+
+- code behavior: targeted tests plus direct runtime/use-path proof
+- UI: rendered exact route/state, not only build output
+- schema/data: post-change schema/query rows, not only migration exit code
+- deploy: live revision and exact URL behavior, not only push or CI
+- documentation/skill: source content, metadata parsing, remote readback, and installed-copy equality
+
+For every source item, prove one of:
+
+- the fresh default-branch implementation covers its useful intent
+- current default branch already covers it
+- no useful behavior survives
+- external ownership/policy prevents cleanup
+
+### 10. Close PRs And Remove Accounted-For Residue
+
+Close obsolete or manually superseded open PRs with a factual note:
+
+```bash
+gh pr close <number> --comment '<useful intent manually implemented on the current default branch at <sha>, or proven superseded>'
+```
+
+Then clean in this order:
+
+1. close obsolete PR
+2. delete owned remote branch
+3. remove clean linked worktree
+4. delete local branch
+5. drop captured or obsolete stash
+6. prune stale tracking and worktree metadata
+7. delete temporary inspection refs
+
+Commands:
 
 ```bash
 git push origin --delete <branch>
+git worktree remove <worktree-path>
 git branch -d <branch>
-git remote prune origin
-```
-
-- Use safe delete first
-- If safe delete fails, skip and document unless the work is fully accounted for
-- If remote deletion is blocked by policy, document that exact policy or error and leave the branch in `DEFERRED`, not `CLEAN`
-
-**Worktrees**
-
-```bash
-git worktree remove <path>
-git worktree prune
-```
-
-- remove only when branch is merged/stale and the worktree has no unique uncommitted work
-- if dirty, either preserve the work first or explicitly defer it
-
-**Stashes**
-
-```bash
 git stash show -p stash@{n}
 git stash drop stash@{n}
+git remote prune origin
+git worktree prune
+git update-ref -d refs/reconcile/<temporary-ref>
 ```
 
-- drop only when the work is clearly captured or valueless
-- keep uncertain stashes
+If `git branch -d` rejects a manually superseded branch because it is not ancestry-merged, re-check its commits and diff against the fresh default branch. Use `git branch -D` only after the native ledger, temporary bundle, manual-port proof, and verification all show zero surviving unique value.
 
-**Garbage collection**
+Drop stashes from highest index to lowest so identifiers do not shift unexpectedly.
 
-```bash
-git gc --prune=now
-```
+There are no remote worktrees; reconcile remote branches/PRs and local worktrees as separate state buckets.
 
-### 12. Sync And Push
+### 11. Handle Concurrent Base Movement
 
-```bash
-git status
-NODE_OPTIONS="--max-old-space-size=4096" npx tsc --noEmit
-git push origin "$BASE_BRANCH"
-```
-
-If push is rejected:
-
-```bash
-git pull --rebase origin "$BASE_BRANCH"
-```
-
-If rebase conflicts, stop and document the exact blocker.
-
-Verify sync:
+Before pushing:
 
 ```bash
 git fetch origin
-git log HEAD..origin/$BASE_BRANCH --oneline
-git log origin/$BASE_BRANCH..HEAD --oneline
+git log HEAD.."origin/$BASE_BRANCH" --oneline
+git log "origin/$BASE_BRANCH"..HEAD --oneline
 ```
 
-Both must be empty before claiming success.
+If the remote base advanced:
 
-### 13. Return A Concise Reconciliation Summary
+- read the new commits and changed files
+- rebase only the fresh current-run reconciliation commits onto `origin/$BASE_BRANCH`
+- resolve conflicts manually against current source truth
+- rerun all affected verification
 
-By default, return a concise summary in the response, not a repo file. Cover only:
+This is base synchronization, not importing an old candidate branch.
+
+Commit atomically and push normally:
+
+```bash
+git push origin "$BASE_BRANCH"
+git fetch origin
+```
+
+### 12. Final Proof
+
+Run and read:
+
+```bash
+git status --short --branch
+git rev-parse HEAD
+git rev-parse "origin/$BASE_BRANCH"
+git branch --format='%(refname:short) %(objectname)'
+git branch --remotes --format='%(refname:short) %(objectname)'
+git worktree list --porcelain
+git stash list
+git diff "origin/$BASE_BRANCH"
+git ls-remote --heads origin
+gh api --paginate 'repos/{owner}/{repo}/pulls?state=open&per_page=100'
+```
+
+Confirm:
+
+- local and remote default-branch SHAs are identical
+- status and diff are empty
+- no non-default local or owned remote branch remains unless `BLOCKED_EXTERNAL`
+- only the main worktree remains
+- no unaccounted stash remains
+- no stale open PR remains
+- every ledger item has one final classification and proof
+- the temporary bundle was verified before cleanup and remained available through final proof
+
+## Final Response
+
+Return concise text only:
 
 ```text
-- Items discovered: N
-- Enhancements ported: N
-- Branches merged (FF): N
-- Deferred: N
+- Items inspected: N
+- Useful changes manually implemented: N
+- Already present / learn-only / obsolete: N / N / N
 - PRs closed: N
-- Branches deleted: N
+- Remote branches deleted: N
+- Local branches deleted: N
 - Worktrees removed: N
 - Stashes dropped: N
-- Still active or deferred items: <identifier + exact reason>
-- Final local SHA on base branch: <sha>
-- Final remote SHA on base branch: <sha>
+- External blockers: <none or exact identifiers and provider error>
+- Final local SHA: <sha>
+- Final remote SHA: <sha>
 - Remaining branches: <list>
 - Remaining worktrees: <list>
 - Remaining stashes: <list>
-- Remaining active sessions affecting repo: <list or none>
-- Sync status: SYNCED / BLOCKED
+- Sync: SYNCED / BLOCKED
 ```
 
-Write a file artifact only if the user explicitly asked for one.
-
-### 14. Final Verification
-
-Run:
-
-```bash
-git branch -a
-git worktree list
-git stash list
-git status
-git diff origin/$BASE_BRANCH
-gh pr list --state open
-```
-
-Cross-check:
-
-Every valuable item from the ledger must end in exactly one of:
-
-- implemented
-- already merged
-- deliberately deferred with reason
-- proven stale
-
-Inventory alone is not correctness. Presence, freshness, and green command output only prove that the next proof step should move deeper.
-
-Zero unaccounted items.
-
-## Decision Standard
-
-Keep and manually port something only if it still improves the current codebase.
-
-Discard it if any of these are true:
-
-- current `main` already includes the behavior
-- the old implementation no longer fits the architecture
-- the change solves a problem that no longer exists
-- the branch is mostly noise with no clear surviving value
-
-If you are unsure, inspect deeper before deleting.
-
-Cleanup is only successful when worthwhile work is preserved and dead branch clutter is removed without losing local-only work, session-only discoveries, or uncommitted branch state.
-
-If the first logged actions in a session are app-file edits, UI fixes, or build runs before the reconciliation ledger exists, treat that attempt as not correctly sequenced.
+Do not create a second report, restate the whole ledger, or ask for approval after completing the inventory. The work is complete only when the useful changes are manually preserved, cleanup is executed, and final local/remote equality is freshly proven.
