@@ -36,6 +36,10 @@ This is an execution skill, not a report generator. Keep the ledger in the platf
 - If the user asked to reconcile everything, proceed without a plan-approval stop. Ask only when an external fact is undiscoverable and a wrong assumption would be materially destructive.
 - Do not stop at inventory, a ledger, a progress note, or a written report while preservation or cleanup remains safely executable.
 - Empty command output is a fact, not automatic success. Read and quote the exact evidence that drives each decision.
+- Treat `refs/codex/turn-diffs/checkpoints/...` as Codex recovery/support refs,
+  not candidate branches. Inventory them when they appear in `--all` or a
+  bundle, but do not delete them as branch residue unless ownership and safe
+  removal are explicitly proven.
 
 ## Speed Contract
 
@@ -174,6 +178,10 @@ printf 'RECON_BACKUP_DIR=%s\n' "$RECON_BACKUP_DIR"
 ```
 
 This is a temporary safety barrier, not a report or substitute for integration.
+Because `git bundle --all` may include support refs such as
+`refs/codex/turn-diffs/checkpoints/...`, bundle contents are not themselves the
+candidate-branch inventory; classify branches from `refs/heads` and
+`refs/remotes` and keep support refs separate.
 
 For every dirty worktree:
 
@@ -184,6 +192,15 @@ For every dirty worktree:
 - do not archive build output, dependencies, caches, or generated noise as product work
 
 Do not remove a dirty worktree merely because its branch commits are backed up; uncommitted files require separate preservation.
+
+If unrelated dirty files appear after an earlier clean proof, stop treating the
+worktree as exclusively owned. Preserve those files, exclude them from the
+current commit, and limit any equality claim to the committed artifact/repo.
+For a locally installed skill, first resolve its authoritative source through
+an explicit repo path, `/Users/samihalawa/git/PROJECTS_MCP_TOOLS/<skill-name>`,
+installation metadata, and the recorded GitHub remote. Only report that no Git
+owner exists after those checks fail; an installed directory outside Git is not
+proof that the skill itself lacks a source repository.
 
 Once dirty state is accounted for, choose the clean worktree that will own the default-branch implementation. Check out the detected default branch there and synchronize only that branch:
 
@@ -317,6 +334,12 @@ Use proof appropriate to the change:
 - schema/data: post-change schema/query rows, not only migration exit code
 - deploy: live revision and exact URL behavior, not only push or CI
 - documentation/skill: source content, metadata parsing, remote readback, and installed-copy equality
+
+For globally installed skills, resolve `realpath` for every advertised agent
+root before counting copies. Symlinked Codex/Claude roots that point to the same
+`~/.agents/skills` directory are one physical installation, not three
+independent proofs. Require authoritative source → GitHub default branch →
+physical installed copy equality.
 
 For every source item, prove one of:
 
